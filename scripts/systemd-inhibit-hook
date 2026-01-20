@@ -7,8 +7,22 @@ systemd_live() {
   fi
 }
 
+battery_check() {
+  min_charge=90
+  for battery in /sys/class/power_supply/BAT*; do
+    [ -e "$battery" ] || return 0  # No battery found, assume desktop/AC
+    status=$(cat "$battery/status" 2>/dev/null)
+    [ "$status" = "Charging" ] || [ "$status" = "Full" ] && return 0
+    capacity=$(cat "$battery/capacity" 2>/dev/null)
+    if [ -n "$capacity" ] && [ "$capacity" -lt "$min_charge" ]; then
+      echo >&2 "  Error: Battery at ${capacity}%. Please charge above ${min_charge}% before updating."
+      exit 1
+    fi
+  done
+}
+
 case $1 in
-  inhibit-start) systemd_live; systemd-inhibit --what="shutdown:sleep:idle:handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch" --who=pacman --why="Pacman is making changes to the system" --mode=block nohup /usr/bin/pacman-systemd-inhibit-sleep 900 > /dev/null 2>&1 & ;;
+  inhibit-start) systemd_live; battery_check; systemd-inhibit --what="shutdown:sleep:idle:handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch" --who=pacman --why="Pacman is making changes to the system" --mode=block nohup /usr/bin/pacman-systemd-inhibit-sleep 900 > /dev/null 2>&1 & ;;
   inhibit-stop)  systemd_live; killall -qe /usr/bin/pacman-systemd-inhibit-sleep || true ;;
   *) echo >&2 "  Invalid operation '$1'"; exit 1 ;;
 esac
